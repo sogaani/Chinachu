@@ -75,6 +75,7 @@ function main(avinfo) {
 				r    : request.query.r      || null  //rate(fps)
 			};
 
+			var rtype = program.recorded.match(/\.([^\.]+?$)/)[1];
 			if (parseInt(d.ss, 10) < 2) {
 				d.ss = '2';
 			}
@@ -190,22 +191,35 @@ function main(avinfo) {
 				args.push("-hwaccel_output_format", "yuv420p");
 			}
 
-			args.push('-i', 'pipe:0');
+			var readStream;
+			if (rtype === 'm2ts') {
+				readStream = fs.createReadStream(program.recorded, range || {});
+
+				request.on('close', function() {
+					readStream.destroy();
+				});
+				args.push('-i', 'pipe:0');
+			} else {
+				args.push('-ss', d.ss);
+				args.push('-i', program.recorded);
+			}
 
 			if (d.t) { args.push('-t', d.t); }
 
 			args.push('-threads', '0');
 
-			if (config.vaapiEnabled === true) {
-				let scale = "";
-				if (d.s) {
-					let [width, height] = d.s.split("x");
-					scale = `,scale_vaapi=w=${width}:h=${height}`;
+			if (!(d['c:v'] === 'copy' && d['c:a'] === 'copy')) {
+				if (config.vaapiEnabled === true) {
+					let scale = "";
+					if (d.s) {
+						let [width, height] = d.s.split("x");
+						scale = `,scale_vaapi=w=${width}:h=${height}`;
+					}
+					args.push("-vf", `format=nv12|vaapi,hwupload,deinterlace_vaapi${scale}`);
+					args.push("-aspect", "16:9")
+				} else {
+					args.push('-filter:v', 'yadif');
 				}
-				args.push("-vf", `format=nv12|vaapi,hwupload,deinterlace_vaapi${scale}`);
-				args.push("-aspect", "16:9")
-			} else {
-				args.push('-filter:v', 'yadif');
 			}
 
 			if (d['c:v']) {
@@ -257,18 +271,16 @@ function main(avinfo) {
 			}
 
 			if (d.f === 'mp4') {
-				args.push('-movflags', 'frag_keyframe+empty_moov+faststart+default_base_moof');
+				if (d['c:v'] === 'copy' && d['c:a'] === 'copy') {
+					args.push('-movflags', 'frag_keyframe+faststart+default_base_moof');
+				} else {
+					args.push('-movflags', 'frag_keyframe+empty_moov+faststart+default_base_moof');
+				}
 			}
 
 			args.push('-y', '-f', d.f, 'pipe:1');
 
-			var readStream = fs.createReadStream(program.recorded, range || {});
-
-			request.on('close', function() {
-				readStream.destroy();
-			});
-
-			if (d['c:v'] === 'copy' && d['c:a'] === 'copy' && !d.t) {
+			if (d['c:v'] === 'copy' && d['c:a'] === 'copy' && d.f === 'mpegts') {
 				readStream.pipe(response);
 			} else {
 				var ffmpeg = child_process.spawn('ffmpeg', args);
@@ -277,7 +289,9 @@ function main(avinfo) {
 
 				ffmpeg.stdout.pipe(response);
 
-				readStream.pipe(ffmpeg.stdin);
+				if (rtype === 'm2ts') {
+					readStream.pipe(ffmpeg.stdin);
+				}
 
 				ffmpeg.stderr.on('data', function(d) {
 					util.log('#ffmpeg: ' + d);

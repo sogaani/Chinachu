@@ -94,18 +94,16 @@ P = Class.create(P, {
 		};
 
 		var set = JSON.parse(localStorage.getItem('program.watch.settings') || '{}');
-
+		var rtype = program.recorded.match(/\.([^\.]+?$)/)[1];
+		set.ext = rtype;
 		if (!set.s) {
 			set.s = '1280x720';
 		}
-		if (!set.ext) {
-			set.ext = 'mp4';
-		}
 		if (!set['b:v']) {
-			set['b:v'] = '1M';
+			set['b:v'] = 'copy';
 		}
 		if (!set['b:a']) {
-			set['b:a'] = '128k';
+			set['b:a'] = 'copy';
 		}
 
 		var buttons = [];
@@ -153,15 +151,21 @@ P = Class.create(P, {
 						saveSettings(d);
 
 						if (d.ext === 'm2ts') {
-							new flagrate.Modal({
-								title: 'エラー',
-								text : 'MPEG-2 TSコンテナの再生はサポートしていません。'
-							}).show();
-							return;
-						}
+							var url = location.host + location.pathname.replace(/\/[^\/]*$/, '');
 
-						modal.close();
-						this.play();
+							if (program._isRecording) {
+								url += '/api/recording/';
+							} else {
+								url += '/api/recorded/';
+							}
+
+							url += program.id + '/watch.' + d.ext + '?' + Object.toQueryString(d);
+
+							location.href = "vlc:// " + location.protocol + '//' + url;
+						} else {
+							modal.close();
+							this.play();
+						}
 					}.bind(this));
 				}.bind(this)
 			});
@@ -264,14 +268,6 @@ P = Class.create(P, {
 							{
 								label: '無変換',
 								value: 'copy'
-							},
-							{
-								label: 'H.264',
-								value: 'h264'
-							},
-							{
-								label: 'MPEG-2',
-								value: 'mpeg2video'
 							}
 						]
 					},
@@ -303,11 +299,11 @@ P = Class.create(P, {
 					input: {
 						type: 'radios',
 						isRequired: true,
-						val: "h264",
+						val: set['c:v'],
 						items: [
 							{
-								label: 'H.264',
-								value: 'h264'
+								label: '無変換',
+								value: 'copy'
 							}
 						]
 					},
@@ -326,19 +322,30 @@ P = Class.create(P, {
 							{
 								label: '無変換',
 								value: 'copy'
-							},
-							{
-								label: 'AAC',
-								value: 'aac'
-							},
-							{
-								label: 'Vorbis',
-								value: 'libvorbis'
 							}
 						]
 					},
 					depends: [
 						{ key: 'ext', val: 'm2ts' }
+					]
+				},
+				{
+					pointer: '/c:a',
+					label: '音声コーデック',
+					input: {
+						type: 'radios',
+						isRequired: true,
+						val: set['c:a'],
+						items: [
+							{
+								label: '無変換',
+								value: 'copy'
+							}
+						]
+					},
+					depends: [
+						{ key: 'ext', val: 'mp4' },
+						{ pointer: '/c:v', val: 'copy' }
 					]
 				},
 				{
