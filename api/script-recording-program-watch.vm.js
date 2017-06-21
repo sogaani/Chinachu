@@ -1,8 +1,11 @@
-(function() {
+var program = chinachu.getProgramById(request.param.id, data.recording);
+if (program === null) {
+	response.error(404);
+} else {
+	init();
+}
 
-	var program = chinachu.getProgramById(request.param.id, data.recording);
-
-	if (program === null) return response.error(404);
+function init() {
 
 	if (!data.status.feature.streamer) return response.error(403);
 
@@ -11,6 +14,24 @@
 	if (program.tuner && program.tuner.isScrambling) return response.error(409);
 
 	if (!fs.existsSync(program.recorded)) return response.error(410);
+
+	// probing
+	child_process.exec('ffprobe -v 0 -show_format -of json "' + program.recorded + '"', function (err, std) {
+
+		if (err) {
+			util.log("error", err);
+			return response.error(500);
+		}
+
+		try {
+			main(JSON.parse(std));
+		} catch (e) {
+			return response.error(500);
+		}
+	});
+}
+
+function main(avinfo) {
 
 	if (request.query.debug) {
 		util.log(JSON.stringify(request.headers, null, '  '));
@@ -40,12 +61,11 @@
 		case 'm2ts':
 		case 'webm':
 		case 'mp4':
-			response.head(200);
 
 			util.log('[streamer] streaming: ' + program.recorded);
 
 			var d = {
-				ss   : request.query.ss     || null, //start(seconds)
+				ss   : request.query.ss     || '2', //start(seconds)
 				t    : request.query.t      || null, //duration(seconds)
 				s    : request.query.s      || null, //size(WxH)
 				f    : request.query.f      || null, //format
@@ -56,6 +76,38 @@
 				ar   : request.query.ar     || null, //ar(Hz)
 				r    : request.query.r      || null  //rate(fps)
 			};
+
+			// Caluculate Total Size
+			var nsize    = parseInt(avinfo.format.size, 10);
+			var lsize    = nsize / parseFloat(avinfo.format.duration) * program.seconds;
+
+			lsize = Math.floor(lsize);
+
+			// Ranges Support
+			var range = {
+				start: 0
+			};
+
+			if (request.type === 'm2ts') {
+				if (request.headers.range) {
+					var bytes = request.headers.range.replace(/bytes=/, '').split('-');
+					var rStart = parseInt(bytes[0], 10);
+					var rEnd   = parseInt(bytes[1], 10) || lsize - 2;
+					if (rStart > nsize) rStart = nsize-61440;
+					range.start = rStart;
+					range.end = rEnd;
+					response.setHeader('Content-Range', 'bytes ' + rStart + '-' + rEnd + '/' + lsize);
+					response.setHeader('Content-Length', rEnd - rStart + 1);
+
+					response.head(206);
+				} else {
+					response.setHeader('Accept-Ranges', 'bytes');
+
+					response.head(200);
+				}
+			} else {
+				response.head(200);
+			}
 
 			switch (request.type) {
 				case 'm2ts':
@@ -148,17 +200,14 @@
 
 			args.push('-y', '-f', d.f, 'pipe:1');
 
-			if ((!d.ss) && (d['c:v'] === 'copy') && (d['c:a'] === 'copy') && (d.f === 'mpegts')) {
-				var tailf = child_process.spawn('tail', ['-f', '-c', '61440', program.recorded]);// 1KB
+			if ((d['c:v'] === 'copy') && (d['c:a'] === 'copy') && (d.f === 'mpegts')) {
+				var tailf = child_process.spawn('tail', ['-f', '-c', '+' + range.start, program.recorded]);
 				children.push(tailf.pid);
 
-				tailf.stdout.pipe(response);
-
 				tailf.on('exit', function(code) {
-					response.end();
 					tailf = null;
+					response.end();
 				});
-
 				request.on('close', function() {
 					if (tailf) {
 						tailf.stdout.removeAllListeners('data');
@@ -166,22 +215,21 @@
 						tailf.kill('SIGKILL');
 					}
 				});
+				tailf.stdout.pipe(response);
 			} else {
 				var ffmpeg = child_process.spawn('ffmpeg', args);
 				children.push(ffmpeg.pid);
 				util.log('SPAWN: ffmpeg ' + args.join(' ') + ' (pid=' + ffmpeg.pid + ')');
 
-				if (!d.ss) {
-					var tailf = child_process.spawn('tail', ['-f', program.recorded]);
-					children.push(tailf.pid);
+				var tailf = child_process.spawn('tail', ['-f', program.recorded]);
+				children.push(tailf.pid);
 
-					tailf.stdout.pipe(ffmpeg.stdin);
+				tailf.stdout.pipe(ffmpeg.stdin);
 
-					tailf.on('exit', function(code) {
-						if (ffmpeg) ffmpeg.kill('SIGKILL');
-						tailf = null;
-					});
-				}
+				tailf.on('exit', function(code) {
+					if (ffmpeg) ffmpeg.kill('SIGKILL');
+					tailf = null;
+				});
 
 				ffmpeg.stdout.pipe(response);
 
@@ -219,4 +267,4 @@
 			return;
 	}//<--switch
 
-})();
+}

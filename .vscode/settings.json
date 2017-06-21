@@ -4,5 +4,6 @@
     "editor.autoClosingBrackets": true,
     "files.trimTrailingWhitespace": true,
     "git.enabled": false,
-    "git.autofetch": false
+    "git.autofetch": false,
+    "files.eol": "\n"
 }
