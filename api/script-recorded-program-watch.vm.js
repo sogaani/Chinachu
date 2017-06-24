@@ -76,6 +76,9 @@ function main(avinfo) {
 			};
 
 			var rtype = program.recorded.match(/\.([^\.]+?$)/)[1];
+
+			if(request.type === 'm2ts' && request.type !== rtype) request.type = rtype;
+
 			if (parseInt(d.ss, 10) < 2) {
 				d.ss = '2';
 			}
