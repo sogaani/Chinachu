@@ -305,6 +305,7 @@ P = Class.create(P, {
 
 			new Ajax.Request('./api/recorded/' + program.id + '/file.json', {
 				method: 'get',
+				requestHeaders: ["If-Modified-Since", "Thu, 01 Jun 1970 00:00:00 GMT"],
 				onSuccess: function(t) {
 
 					if (this.app.pm.p.id !== this.id) return;
