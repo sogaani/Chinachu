@@ -1,6 +1,8 @@
 var program = chinachu.getProgramById(request.param.id, data.recording);
 if (program === null) {
-	response.error(404);
+	response.setHeader('Location', request.url.replace(/\/recording\//, '/recorded/'));
+	response.head(301);
+	response.end();
 } else {
 	init();
 }
