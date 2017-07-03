@@ -573,27 +573,39 @@ P = Class.create(P, {
 
 		var seek = control.getElementByKey('seek');
 
+		var seekTimeoutId = null;
 		var seekSlideEvent = function() {
-			var value = seek.getValue();
-
-			d.ss = value;
-			var uri = getRequestURI();
+			if( seekTimeoutId ) {
+				return false ;
+			}
+			var lastValue = seek.getValue();
 
 			seek.disable();
 			fastForward.disable();
 			fastRewind.disable();
 
-			video.src = uri;
-			video.play();
+			seekTimeoutId = setTimeout(function() {
+				var value = seek.getValue();
+				seekTimeoutId = null;
+				if(lastValue === value){
+					d.ss = value;
+					var uri = getRequestURI();
 
-			lastTime = 0;
-			currentTime = d.ss * 1000;
+					video.src = uri;
+					video.play();
 
-			setTimeout(function() {
-				seek.enable();
-				fastForward.enable();
-				fastRewind.enable();
-			}, 1000);
+					lastTime = 0;
+					currentTime = d.ss * 1000;
+
+					setTimeout(function() {
+						seek.enable();
+						fastForward.enable();
+						fastRewind.enable();
+					}, 1000);
+				} else {
+					seekSlideEvent();
+				}
+			}, 500);
 		};
 
 		var seekValue = function(value) {
