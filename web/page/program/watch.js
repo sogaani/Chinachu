@@ -490,7 +490,7 @@ P = Class.create(P, {
 
 		var video = new flagrate.Element('video', {
 			autoplay: false,
-			controls: true,
+			controls: false,
 			poster: getPreviewURI(0)
 		}).insertTo(videoContainer);
 
